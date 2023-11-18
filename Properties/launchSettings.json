@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "AxisDemoSample (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "AxisDemoSample (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
