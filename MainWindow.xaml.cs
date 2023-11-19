@@ -31,13 +31,70 @@ namespace AxisDemoSample
 
         }
 
+
+        private Uri devicemanagementXaddr;
+
         private void myButton_Click(object sender, RoutedEventArgs e)
         {
-            myButton.Content = "Clicked";
-
             OnvifEventTests tests = new OnvifEventTests();
 
             tests.InitializeAsync();
+        }
+
+        private async void AddParametersButtonName_Click(object sender, RoutedEventArgs e)
+        {
+            ContentDialog dialog = new ContentDialog();
+
+            // XamlRoot must be set in the case of a ContentDialog running in a Desktop app
+            dialog.XamlRoot = MainWindowGridName.XamlRoot;
+            dialog.Style = Application.Current.Resources["DefaultContentDialogStyle"] as Style;
+            dialog.Title = "Fill In Onvif Device Service Credentials";
+            dialog.PrimaryButtonText = "OK";
+            dialog.SecondaryButtonText = "Cancel";
+            dialog.CloseButtonText = null;
+            dialog.DefaultButton = ContentDialogButton.Primary;
+            FillinXaddrLoginPasswordDialogContent cn = new FillinXaddrLoginPasswordDialogContent();
+            dialog.Content = cn;
+            dialog.PrimaryButtonClick += Dialog_PrimaryButtonClick;
+            ContentDialogResult result = await dialog.ShowAsync();
+
+            if (result == ContentDialogResult.Primary)
+            {
+                FillinXaddrLoginPasswordDialogContent fc = dialog.Content as FillinXaddrLoginPasswordDialogContent;
+                
+                
+                OnvifEventTests tests = new OnvifEventTests(fc.OnvifDeviceXaddr, fc.OnvifDeviceUserName, fc.OnvifDevicePassword);
+                tests.InitializeAsync();
+            }
+            else
+            {
+                return;
+            }
+        }
+
+        private void Dialog_PrimaryButtonClick(ContentDialog sender, ContentDialogButtonClickEventArgs args)
+        {
+            if(sender.Content is FillinXaddrLoginPasswordDialogContent)
+            {
+                FillinXaddrLoginPasswordDialogContent fc = sender.Content as FillinXaddrLoginPasswordDialogContent;
+                Uri xadder = null;
+                bool uriSuccess = Uri.TryCreate(fc.OnvifDeviceXaddr, UriKind.Absolute, out xadder);
+
+                if(uriSuccess)
+                {
+
+                }
+                else
+                {
+                    {
+                        args.Cancel = true;
+                        fc.DeviceAddressErrorIconVisibility = Visibility.Visible;
+                        return;
+                    }
+                }
+
+            }
+            
         }
     }
 }

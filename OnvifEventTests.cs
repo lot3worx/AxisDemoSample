@@ -27,10 +27,10 @@ namespace AxisDemoSample
     public class OnvifEventTests
     {
 
-        private string xaddr = "http://192.168.0.13/onvif/device_service";
+        private string xaddr;
         
-        private string loginName = "UserName";
-        private string password = "The Password";
+        private string loginName;
+        private string password;
         private Uri deviceServiceUri;
 
 
@@ -50,11 +50,19 @@ namespace AxisDemoSample
             // You need to populate the following xaddr login name and paswword with the axis device Onvif service xaddr, and Onvif username and passwrod account.
             // It is assumed that the Onvif user account has adminsitrator privileges.
 
-            /*
-            this.xaddr = "XXXXX";
+            
+            this.xaddr = "http://192.168.0.13/onvif/device_service";
             this.loginName = "SeeOnvif";
-            this.password = "ThePassword";
-            */
+            this.password = "password";
+            
+        }
+
+        public OnvifEventTests(string deviceServiceXaddr, string userName, string password)
+        {
+
+            this.xaddr = deviceServiceXaddr;
+            this.loginName= userName;
+            this.password = password;
         }
 
         public async void InitializeAsync()
@@ -181,7 +189,7 @@ namespace AxisDemoSample
             {
                 Debug.WriteLine("Exception trying to get initial capabilities etc from onvif profile G device: " + ex.Message);
                 okToProceed = false;
-                return false;
+                 throw;
             }
             finally
             {

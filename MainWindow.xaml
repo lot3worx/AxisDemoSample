@@ -6,9 +6,12 @@
     xmlns:local="using:AxisDemoSample"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    mc:Ignorable="d">
-
-    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-        <Button x:Name="myButton" Click="myButton_Click">Click Me</Button>
-    </StackPanel>
+    mc:Ignorable="d"
+    x:Name="MainWindowName">
+    <Grid x:Name="MainWindowGridName">
+        <StackPanel Orientation="Vertical" Spacing="10" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Button x:Name="AddParametersButtonName" Click="AddParametersButtonName_Click" Style="{StaticResource ButtonRevealStyle}">Credentials Dialog</Button>
+            <Button x:Name="myButton" Click="myButton_Click" Style="{StaticResource ButtonRevealStyle}">Start Tests With Hard Coded Credentials</Button>
+        </StackPanel>
+    </Grid>
 </Window>
