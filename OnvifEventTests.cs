@@ -21,6 +21,7 @@ using System.ServiceModel.Security;
 
 
 using static System.Net.WebRequestMethods;
+using OnvifEvents;
 
 namespace AxisDemoSample
 {
@@ -247,9 +248,57 @@ namespace AxisDemoSample
             OnvifEvents.GetEventPropertiesResponse cvb = await evClient.GetEventPropertiesAsync(new OnvifEvents.GetEventPropertiesRequest());
             OnvifEvents.TopicSetType tst = cvb.TopicSet;
 
+            /*
+             // Call to GetServiceCapabilitiesAsync commented out as the bug has been confirmed in Axis and no point faulting on it or testing until rectification.
+             
             OnvifEvents.GetServiceCapabilitiesResponse capRes = await evClient.GetServiceCapabilitiesAsync(new OnvifEvents.GetServiceCapabilitiesRequest());
+            */
 
-            await evClient.CloseAsync();
+
+            // Now lets create a pullpointsubscriptio so we can subscribe to events.
+            // In this case we will set the subdcirption time for 5 minutes, and go for all topics which were retrieved in the previous call to GetEventPropertiesAsync.
+
+            OnvifEvents.CreatePullPointSubscriptionResponse pc = await evClient.CreatePullPointSubscriptionAsync(new OnvifEvents.CreatePullPointSubscriptionRequest(null, "PT5M", null, tst.Any));
+
+            // We now have the pullpointsubscription created for us by the Axis device. The critical parameter is the pullpoint subscription reference
+            // which gives us the endpoint for creating a subscription client and then start pulling event messages.
+
+            OnvifEvents.ReferenceParametersType refParams = pc.SubscriptionReference.ReferenceParameters;
+            OnvifEvents.AttributedURIType subscriptionsUri = pc.SubscriptionReference.Address;
+
+            string sUristring = subscriptionsUri.Value;
+
+            Uri pullPointServiceUri = null;
+
+            if (Uri.TryCreate(sUristring, UriKind.Absolute, out pullPointServiceUri))
+            {
+                HttpTransportBindingElement httpTransport = new HttpTransportBindingElement { AuthenticationScheme = AuthenticationSchemes.Digest };
+
+                TextMessageEncodingBindingElement textEnc = new TextMessageEncodingBindingElement(MessageVersion.Soap12WSAddressing10, Encoding.UTF8);
+
+                CustomBinding custBinding = new CustomBinding(textEnc, httpTransport);
+
+                EndpointAddress endP = new EndpointAddress(pullPointServiceUri);
+
+
+                OnvifEvents.PullPointSubscriptionClient subclient = new OnvifEvents.PullPointSubscriptionClient(custBinding, endP);
+
+                subclient.ClientCredentials.UserName.UserName = this.loginName;
+                subclient.ClientCredentials.UserName.Password = this.password;
+                subclient.ClientCredentials.HttpDigest.ClientCredential.UserName = this.loginName;
+                subclient.ClientCredentials.HttpDigest.ClientCredential.Password = this.password;
+
+
+                await subclient.OpenAsync();
+
+                // This call unsurprisingly produces a resposne from the Axis server of "Bad Request" since it is pretty the subscription address is malformed in some way
+                // and does not include the subscription ID as a parameter in the Uri.
+                OnvifEvents.PullMessagesResponse messages = await subclient.PullMessagesAsync(new PullMessagesRequest("PT5M", 2, tst.Any));
+
+                await subclient.CloseAsync();
+
+                await evClient.CloseAsync();
+            }
 
             return true;
         }

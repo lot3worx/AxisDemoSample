@@ -10,7 +10,7 @@ It is specified in the project and should just happen when you build but ensure 
 
 You compile in the Microsoft Nuget Service Model stack including items such as system.servicemodel.* Also ensure that you have the latest version since if you load them yourself you need to check for the updates and then upgrade.
 
-You also need to check that the official Onvif WSDL for device management and eventss are loaded as connected WCF services as per usual. More precisely, generated code
+You also need to check that the official Onvif WSDL for device management and events are loaded as connected WCF services as per usual. More precisely, generated code
 for
 
 https://www.onvif.org/ver10/device/wsdl/devicemgmt.wsdl
