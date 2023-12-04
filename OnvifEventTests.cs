@@ -22,6 +22,10 @@ using System.ServiceModel.Security;
 
 using static System.Net.WebRequestMethods;
 using OnvifEvents;
+using System.Text.RegularExpressions;
+using System.IO;
+using System.Xml.Schema;
+using System.Xml;
 
 namespace AxisDemoSample
 {
@@ -44,6 +48,7 @@ namespace AxisDemoSample
 
         private bool okToProceed = false;
 
+        private Regex subscriptionIDRegex;
 
         public OnvifEventTests()
         {
@@ -55,6 +60,8 @@ namespace AxisDemoSample
             this.xaddr = "http://192.168.0.13/onvif/device_service";
             this.loginName = "SeeOnvif";
             this.password = "password";
+
+            subscriptionIDRegex = new Regex(@"^<dom0:SubscriptionId.+>(?'evchannel'\d+)</dom0:SubscriptionId>$", RegexOptions.IgnoreCase);
             
         }
 
@@ -64,6 +71,8 @@ namespace AxisDemoSample
             this.xaddr = deviceServiceXaddr;
             this.loginName= userName;
             this.password = password;
+
+            subscriptionIDRegex = new Regex(@"^<dom0:SubscriptionId.+>(?'evchannel'\d+)</dom0:SubscriptionId>$", RegexOptions.IgnoreCase);
         }
 
         public async void InitializeAsync()
@@ -255,8 +264,8 @@ namespace AxisDemoSample
             */
 
 
-            // Now lets create a pullpointsubscriptio so we can subscribe to events.
-            // In this case we will set the subdcirption time for 5 minutes, and go for all topics which were retrieved in the previous call to GetEventPropertiesAsync.
+            // Now lets create a pullpointsubscription so we can subscribe to events.
+            // In this case we will set the subscription time for 5 minutes, and go for all topics which were retrieved in the previous call to GetEventPropertiesAsync.
 
             OnvifEvents.CreatePullPointSubscriptionResponse pc = await evClient.CreatePullPointSubscriptionAsync(new OnvifEvents.CreatePullPointSubscriptionRequest(null, "PT5M", null, tst.Any));
 
@@ -266,7 +275,20 @@ namespace AxisDemoSample
             OnvifEvents.ReferenceParametersType refParams = pc.SubscriptionReference.ReferenceParameters;
             OnvifEvents.AttributedURIType subscriptionsUri = pc.SubscriptionReference.Address;
 
-            string sUristring = subscriptionsUri.Value;
+
+            string subId = refParams.Any[0].OuterXml;
+            Match subMatch = subscriptionIDRegex.Match(subId);
+            string sUristring = null;
+            if (subMatch.Success)
+            {
+                sUristring = subscriptionsUri.Value; // + "?" + refParams.Any[0].Name + "=" + refParams.Any[0].FirstChild.Value;
+            }
+            else
+            {
+                throw new ArgumentException("bad subscription ID reference parameter returned from Axis DUT");
+            }
+
+            
 
             Uri pullPointServiceUri = null;
 
@@ -288,19 +310,104 @@ namespace AxisDemoSample
                 subclient.ClientCredentials.HttpDigest.ClientCredential.UserName = this.loginName;
                 subclient.ClientCredentials.HttpDigest.ClientCredential.Password = this.password;
 
+                subclient.ChannelFactory.Endpoint.EndpointBehaviors.Add(new SimpleEndpointBehavior());
 
                 await subclient.OpenAsync();
 
                 // This call unsurprisingly produces a resposne from the Axis server of "Bad Request" since it is pretty the subscription address is malformed in some way
                 // and does not include the subscription ID as a parameter in the Uri.
-                OnvifEvents.PullMessagesResponse messages = await subclient.PullMessagesAsync(new PullMessagesRequest("PT5M", 2, tst.Any));
-
+                OnvifEvents.PullMessagesResponse messages = await subclient.PullMessagesAsync(new PullMessagesRequest("PT5M", 2, refParams.Any));
+                
                 await subclient.CloseAsync();
 
                 await evClient.CloseAsync();
             }
 
             return true;
+        }
+
+        // Client message inspector  
+        public class SimpleMessageInspector : IClientMessageInspector
+        {
+            public void AfterReceiveReply(ref System.ServiceModel.Channels.Message reply, object correlationState)
+            {
+                // Implement this method to inspect/modify messages after a message  
+                // is received but prior to passing it back to the client
+                Debug.WriteLine("AfterReceiveReply called");
+
+                string r = reply.ToString();
+            }
+
+            public object BeforeSendRequest(ref System.ServiceModel.Channels.Message request, IClientChannel channel)
+            {
+                // Implement this method to inspect/modify messages before they
+                // are sent to the service  
+                Debug.WriteLine("BeforeSendRequest called");
+                string msString = request.ToString();
+                System.ServiceModel.Channels.Message message = request as System.ServiceModel.Channels.Message;
+
+                // pull body into a memory backed writer
+                XmlDictionaryReaderQuotas quotas =
+                new XmlDictionaryReaderQuotas();
+                XmlReader bodyReader =
+                    message.GetReaderAtBodyContents().ReadSubtree();
+                XmlReaderSettings wrapperSettings =
+                                      new XmlReaderSettings();
+                wrapperSettings.CloseInput = true;
+                //wrapperSettings.Schemas = schemaSet;
+                wrapperSettings.ValidationFlags =
+                                        XmlSchemaValidationFlags.None;
+                wrapperSettings.ValidationType = ValidationType.Schema;
+                //wrapperSettings.ValidationEventHandler += new
+                //ValidationEventHandler(InspectionValidationHandler);
+                XmlReader wrappedReader = XmlReader.Create(bodyReader,
+                                                    wrapperSettings);
+                //string ms = wrappedReader.Read;
+
+                // Now write it out again.
+
+                MemoryStream memStream = new MemoryStream();
+                XmlDictionaryWriter xdw = XmlDictionaryWriter.CreateBinaryWriter(memStream);
+                xdw.WriteNode(wrappedReader, false);
+                xdw.Flush(); memStream.Position = 0;
+                XmlDictionaryReader xdr = XmlDictionaryReader.CreateBinaryReader(memStream, quotas);
+                
+                // reconstruct the message with any modifications made
+
+                //string ty = "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\r\n\r\n-<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:a=\"http://www.w3.org/2005/08/addressing\">\r\n\r\n\r\n-<s:Header>\r\n\r\n<a:Action s:mustUnderstand=\"1\">http://www.onvif.org/ver10/events/wsdl/PullPointSubscription/PullMessagesRequest</a:Action>\r\n\r\n<a:MessageID>urn:uuid:2e5eb691-d5b8-4e74-b9f5-d375db21a87d</a:MessageID>\r\n\r\n\r\n-<a:ReplyTo>\r\n\r\n<a:Address>http://www.w3.org/2005/08/addressing/anonymous</a:Address>\r\n\r\n</a:ReplyTo>\r\n\r\n</s:Header>\r\n\r\n\r\n-<s:Body xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\r\n\r\n\r\n-<PullMessages xmlns=\"http://www.onvif.org/ver10/events/wsdl\">\r\n\r\n<Timeout>PT5M</Timeout>\r\n\r\n<MessageLimit>1</MessageLimit>\r\n\r\n<dom0:SubscriptionId xmlns:dom0=\"http://www.axis.com/2009/event\">1</dom0:SubscriptionId>\r\n\r\n</PullMessages>\r\n\r\n</s:Body>\r\n\r\n</s:Envelope>";
+
+                Message replacedMessage =
+                    Message.CreateMessage(message.Version, null, xdr);
+                replacedMessage.Headers.CopyHeadersFrom(message.Headers);
+                replacedMessage.Properties.CopyProperties(message.Properties);
+                request = replacedMessage;
+
+                return null;
+            }
+        }
+
+        // Endpoint behavior  
+        public class SimpleEndpointBehavior : IEndpointBehavior
+        {
+            public void AddBindingParameters(ServiceEndpoint endpoint, System.ServiceModel.Channels.BindingParameterCollection bindingParameters)
+            {
+                // No implementation necessary  
+            }
+
+            public void ApplyClientBehavior(ServiceEndpoint endpoint, ClientRuntime clientRuntime)
+            {
+                clientRuntime.ClientMessageInspectors.Add(new SimpleMessageInspector());
+            }
+
+            public void ApplyDispatchBehavior(ServiceEndpoint endpoint, EndpointDispatcher endpointDispatcher)
+            {
+                // No implementation necessary  
+            }
+
+            public void Validate(ServiceEndpoint endpoint)
+            {
+                // No implementation necessary  
+            }
         }
 
         private void DeviceChannel_Faulted(object sender, EventArgs e)
