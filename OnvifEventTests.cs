@@ -277,6 +277,8 @@ namespace AxisDemoSample
 
 
             string subId = refParams.Any[0].OuterXml;
+
+            /*
             Match subMatch = subscriptionIDRegex.Match(subId);
             string sUristring = null;
             if (subMatch.Success)
@@ -288,11 +290,11 @@ namespace AxisDemoSample
                 throw new ArgumentException("bad subscription ID reference parameter returned from Axis DUT");
             }
 
-            
+            */
 
             Uri pullPointServiceUri = null;
 
-            if (Uri.TryCreate(sUristring, UriKind.Absolute, out pullPointServiceUri))
+            if (Uri.TryCreate(subscriptionsUri.Value, UriKind.Absolute, out pullPointServiceUri))
             {
                 HttpTransportBindingElement httpTransport = new HttpTransportBindingElement { AuthenticationScheme = AuthenticationSchemes.Digest };
 
@@ -314,7 +316,7 @@ namespace AxisDemoSample
 
                 await subclient.OpenAsync();
 
-                // This call unsurprisingly produces a resposne from the Axis server of "Bad Request" since it is pretty the subscription address is malformed in some way
+                // This call unsurprisingly produces a response from the Axis server of "400 Bad Request" since it is pretty clear the subscription address is malformed in some way
                 // and does not include the subscription ID as a parameter in the Uri.
                 OnvifEvents.PullMessagesResponse messages = await subclient.PullMessagesAsync(new PullMessagesRequest("PT5M", 2, refParams.Any));
                 
