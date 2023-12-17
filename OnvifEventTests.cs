@@ -383,35 +383,40 @@ namespace AxisDemoSample
                 // Now write it out again.
 
                 MemoryStream memStream = new MemoryStream();
-                XmlDictionaryWriter xdw = XmlDictionaryWriter.CreateBinaryWriter(memStream);
-                xdw.WriteNode(wrappedReader, false);
-                xdw.Flush();
-                memStream.Position = 0;
-
-                XmlDictionaryReader xdr = XmlDictionaryReader.CreateBinaryReader(memStream, quotas);
                 
-                // reconstruct the message with modifications as necessary. In this parotcular case are adding the Axis SubscriptioId to the SOAP Header.
+                    XmlDictionaryWriter xdw = XmlDictionaryWriter.CreateBinaryWriter(memStream);
+                    xdw.WriteNode(wrappedReader, false);
+                    xdw.Flush();
+                    memStream.Position = 0;
 
-                Message replacedMessage =
-                    Message.CreateMessage(message.Version, null, xdr);
+                    XmlDictionaryReader xdr = XmlDictionaryReader.CreateBinaryReader(memStream, quotas);
 
-                replacedMessage.Headers.CopyHeadersFrom(message.Headers);
+                    // reconstruct the message with modifications as necessary. In this particular case are adding the Axis SubscriptioId to the SOAP Header.
 
-                var axisSubscriberId = OperationContext.Current.OutgoingMessageProperties["RefParams"];
+                    Message replacedMessage =
+                        Message.CreateMessage(message.Version, null, xdr);
 
-                if(axisSubscriberId is XmlElement[])
-                {
-                    foreach(XmlElement el in axisSubscriberId as XmlElement[])
+                    replacedMessage.Headers.CopyHeadersFrom(message.Headers);
+
+                    var axisSubscriberId = OperationContext.Current.OutgoingMessageProperties["RefParams"];
+
+                    if (axisSubscriberId is XmlElement[])
                     {
-                        Console.WriteLine(el.ToString());
-                        MessageHeader header = MessageHeader.CreateHeader(el.LocalName, el.NamespaceURI, el.InnerXml);
-                        replacedMessage.Headers.Add(header);
+                        foreach (XmlElement el in axisSubscriberId as XmlElement[])
+                        {
+                            Console.WriteLine(el.ToString());
+
+                            MessageHeader header = MessageHeader.CreateHeader(el.LocalName, el.NamespaceURI, el.InnerXml);
+                            replacedMessage.Headers.Add(header);
+                        }
                     }
-                }
+
+                    replacedMessage.Properties.CopyProperties(message.Properties);
+                    memStream.Flush();
+                    request = replacedMessage;
+                    string rmString = request.ToString();
                 
-                replacedMessage.Properties.CopyProperties(message.Properties);
-                request = replacedMessage;
-                string rmString = replacedMessage.ToString();
+                
                 return null;
             }
         }
