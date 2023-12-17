@@ -26,6 +26,7 @@ using System.Text.RegularExpressions;
 using System.IO;
 using System.Xml.Schema;
 using System.Xml;
+using System.Threading.Channels;
 
 namespace AxisDemoSample
 {
@@ -49,6 +50,8 @@ namespace AxisDemoSample
         private bool okToProceed = false;
 
         private Regex subscriptionIDRegex;
+
+        OnvifEvents.ReferenceParametersType refParams = null;
 
         public OnvifEventTests()
         {
@@ -272,7 +275,7 @@ namespace AxisDemoSample
             // We now have the pullpointsubscription created for us by the Axis device. The critical parameter is the pullpoint subscription reference
             // which gives us the endpoint for creating a subscription client and then start pulling event messages.
 
-            OnvifEvents.ReferenceParametersType refParams = pc.SubscriptionReference.ReferenceParameters;
+            this.refParams = pc.SubscriptionReference.ReferenceParameters;
             OnvifEvents.AttributedURIType subscriptionsUri = pc.SubscriptionReference.Address;
 
 
@@ -314,12 +317,23 @@ namespace AxisDemoSample
 
                 subclient.ChannelFactory.Endpoint.EndpointBehaviors.Add(new SimpleEndpointBehavior());
 
-                await subclient.OpenAsync();
+                using (OperationContextScope opScope = new OperationContextScope((IContextChannel)subclient.InnerChannel))
+                {
 
+
+                    // Add properties to OutgoingMessageProperties
+                    OperationContext.Current.OutgoingMessageProperties.Add("RefParams", refParams.Any);
+
+                    // Call the pullMessages Operation. Here even if we want to pass the Axis susbcription ID in the thirs parameter we pass it as a null and retrive
+                    // it from the operation context scope.
+                    OnvifEvents.PullMessagesResponse messages = await subclient.PullMessagesAsync(new PullMessagesRequest("PT5M", 5, null));
+                }
+                
+                /*
                 // This call unsurprisingly produces a response from the Axis server of "400 Bad Request" since it is pretty clear the subscription address is malformed in some way
                 // and does not include the subscription ID as a parameter in the Uri.
                 OnvifEvents.PullMessagesResponse messages = await subclient.PullMessagesAsync(new PullMessagesRequest("PT5M", 2, refParams.Any));
-                
+                */
                 await subclient.CloseAsync();
 
                 await evClient.CloseAsync();
@@ -371,19 +385,33 @@ namespace AxisDemoSample
                 MemoryStream memStream = new MemoryStream();
                 XmlDictionaryWriter xdw = XmlDictionaryWriter.CreateBinaryWriter(memStream);
                 xdw.WriteNode(wrappedReader, false);
-                xdw.Flush(); memStream.Position = 0;
+                xdw.Flush();
+                memStream.Position = 0;
+
                 XmlDictionaryReader xdr = XmlDictionaryReader.CreateBinaryReader(memStream, quotas);
                 
-                // reconstruct the message with any modifications made
-
-                //string ty = "<?xml version=\"1.0\" encoding=\"UTF-16\"?>\r\n\r\n-<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:a=\"http://www.w3.org/2005/08/addressing\">\r\n\r\n\r\n-<s:Header>\r\n\r\n<a:Action s:mustUnderstand=\"1\">http://www.onvif.org/ver10/events/wsdl/PullPointSubscription/PullMessagesRequest</a:Action>\r\n\r\n<a:MessageID>urn:uuid:2e5eb691-d5b8-4e74-b9f5-d375db21a87d</a:MessageID>\r\n\r\n\r\n-<a:ReplyTo>\r\n\r\n<a:Address>http://www.w3.org/2005/08/addressing/anonymous</a:Address>\r\n\r\n</a:ReplyTo>\r\n\r\n</s:Header>\r\n\r\n\r\n-<s:Body xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\r\n\r\n\r\n-<PullMessages xmlns=\"http://www.onvif.org/ver10/events/wsdl\">\r\n\r\n<Timeout>PT5M</Timeout>\r\n\r\n<MessageLimit>1</MessageLimit>\r\n\r\n<dom0:SubscriptionId xmlns:dom0=\"http://www.axis.com/2009/event\">1</dom0:SubscriptionId>\r\n\r\n</PullMessages>\r\n\r\n</s:Body>\r\n\r\n</s:Envelope>";
+                // reconstruct the message with modifications as necessary. In this parotcular case are adding the Axis SubscriptioId to the SOAP Header.
 
                 Message replacedMessage =
                     Message.CreateMessage(message.Version, null, xdr);
+
                 replacedMessage.Headers.CopyHeadersFrom(message.Headers);
+
+                var axisSubscriberId = OperationContext.Current.OutgoingMessageProperties["RefParams"];
+
+                if(axisSubscriberId is XmlElement[])
+                {
+                    foreach(XmlElement el in axisSubscriberId as XmlElement[])
+                    {
+                        Console.WriteLine(el.ToString());
+                        MessageHeader header = MessageHeader.CreateHeader(el.LocalName, el.NamespaceURI, el.InnerXml);
+                        replacedMessage.Headers.Add(header);
+                    }
+                }
+                
                 replacedMessage.Properties.CopyProperties(message.Properties);
                 request = replacedMessage;
-
+                string rmString = replacedMessage.ToString();
                 return null;
             }
         }
